@@ -179,7 +179,7 @@ def updateChannelUrlsM3U(channels, template_channels):
         f_txt.write("\n")
         f_txt_ipv6.write("\n")
 
-async def check_link_quality(session, link):
+async def check_link_quality2(session, link):
     timeout = ClientTimeout(total=2)  # 设置2秒超时
     try:
         start_time = time.time()
@@ -192,13 +192,53 @@ async def check_link_quality(session, link):
     except:
         return float('inf')
 
-async def check_links_batch(urls):
+async def check_links_batch2(urls):
     conn = aiohttp.TCPConnector(limit=100)  # 允许100个并发连接
     timeout = ClientTimeout(total=2)
     async with aiohttp.ClientSession(connector=conn, timeout=timeout) as session:
         tasks = [check_link_quality(session, url) for url in urls]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         return results
+
+async def check_link_quality(session, link):
+    try:
+        start_time = time.time()
+        # 用 GET 并且只下载前 128KB 来测速+验证能否播放
+        async with session.get(
+            link,
+            timeout=ClientTimeout(total=5),
+            allow_redirects=True,
+            headers={"Range": "bytes=0-131071"}  # 取前128KB
+        ) as response:
+
+            if response.status not in (200, 206):
+                return float('inf')
+
+            # 读取一小段数据
+            content = await response.content.read(131072)
+            cost_time = time.time() - start_time
+
+            # 简单判断是否是流媒体（m3u8 / 视频流特征）
+            if link.endswith(('.m3u8', '.ts')) or b'#EXTM3U' in content[:512] or len(content) > 256:
+                speed = len(content) / cost_time / 1024  # KB/s
+                print(f"✅可播放 {link} | 速度: {speed:.1f} KB/s | 耗时: {cost_time:.2f}s")
+                # 速度越大越优先，这里返回负数让排序时快的在前
+                return -speed
+            else:
+                return float('inf')
+
+    except Exception as e:
+        return float('inf')
+
+async def check_links_batch(urls):
+    if not urls:
+        return []
+    conn = aiohttp.TCPConnector(limit=100, ssl=False)
+    async with aiohttp.ClientSession(connector=conn) as session:
+        tasks = [check_link_quality(session, url) for url in urls]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+    return results
+
 
 def process_channel_links(channel_links):
     sorted_channels = {}
