@@ -186,7 +186,7 @@ async def check_link_quality(session, link):
         async with session.head(link, timeout=timeout, allow_redirects=True) as response:
             response_time = time.time() - start_time
             if response.status == 200:
-                print(url)
+                print(link)
                 return response_time
             return float('inf')
     except:
